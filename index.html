@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Калькулятор Окон</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; margin: 0; padding: 16px; color: #1f2937; }
+        h2 { text-align: center; margin-bottom: 20px; }
+        .card { background: white; padding: 16px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+        .input-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+        label { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; font-weight: bold; }
+        input[type="number"] { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+        
+        /* Визуализация */
+        #window-visual-container { display: flex; justify-content: center; margin-bottom: 10px; }
+        #window-frame { border: 4px solid #374151; background: #dbeafe; display: flex; position: relative; overflow: hidden; transition: all 0.3s; max-height: 250px; }
+        .sash { flex: 1; border-right: 2px solid #4b5563; position: relative; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: #1e40af; user-select: none; }
+        .sash:last-child { border-right: none; }
+        .sash:active { background-color: #bfdbfe; }
+        /* Индикаторы открывания CSS */
+        .sash.fixed::after { content: 'ГЛУХОЕ'; color: #9ca3af; }
+        .sash.turn::before { content: ''; position: absolute; top:0; left:0; width:100%; height:100%; border-left: 2px solid rgba(0,0,0,0.2); border-bottom: 2px solid rgba(0,0,0,0.2); transform: rotate(45deg) translate(20%, 20%); pointer-events: none;}
+        .sash.tilt-turn::before { content: ''; position: absolute; top:0; left:0; width:100%; height:100%; border-left: 2px solid rgba(0,0,0,0.2); border-bottom: 2px solid rgba(0,0,0,0.2); transform: rotate(45deg) translate(20%, 20%); pointer-events: none;}
+        .sash.tilt-turn::after { content: 'V'; position: absolute; bottom: 5px; width: 100%; text-align: center; color: #2563eb; }
+
+        /* Управление */
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .btn-circle { width: 40px; height: 40px; border-radius: 50%; border: none; font-size: 20px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .btn-minus { background: #e5e7eb; color: #374151; }
+        .btn-plus { background: #2563eb; color: white; }
+
+        /* Чекбоксы */
+        .checkbox-group label { display: flex; align-items: center; padding: 8px 0; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
+        .checkbox-group input { margin-right: 10px; width: 18px; height: 18px; }
+        .price-hint { margin-left: auto; font-size: 12px; color: #9ca3af; }
+    </style>
+</head>
+<body>
+    <h2>Расчет Окна 🪟</h2>
+
+    <div class="card" style="position: sticky; top: 0; z-index: 10;">
+        <div id="window-visual-container">
+            <div id="window-frame" style="width: 300px; height: 200px;"></div>
+        </div>
+        <p style="text-align: center; font-size: 11px; color: #6b7280; margin: 0;">Нажми на створку, чтобы изменить открывание</p>
+    </div>
+
+    <div class="card">
+        <div class="input-group">
+            <div>
+                <label>Ширина (мм)</label>
+                <input type="number" id="input-width" value="1300" min="500">
+            </div>
+            <div>
+                <label>Высота (мм)</label>
+                <input type="number" id="input-height" value="1400" min="500">
+            </div>
+        </div>
+
+        <div class="controls">
+            <span style="font-weight: 500;">Створок: <span id="sash-count">2</span></span>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-circle btn-minus" onclick="updateSashes(-1)">-</button>
+                <button class="btn-circle btn-plus" onclick="updateSashes(1)">+</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card checkbox-group">
+        <h3 style="margin: 0 0 10px 0; font-size: 16px;">Комплектация</h3>
+        <label><input type="checkbox" id="check-sill"> Подоконник <span class="price-hint">~800₽/мп</span></label>
+        <label><input type="checkbox" id="check-ebb"> Отлив <span class="price-hint">~400₽/мп</span></label>
+        <label><input type="checkbox" id="check-mosquito"> Москитная сетка <span class="price-hint">1200₽/шт</span></label>
+        <label><input type="checkbox" id="check-install"> Монтаж <span class="price-hint">~2500₽/м²</span></label>
+    </div>
+
+    <div style="height: 60px;"></div>
+
+    <button id="demo-button" class="btn-plus" style="display:none; width:100%; padding:14px; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:pointer;">СФОРМИРОВАТЬ PDF (демо)</button>
+
+    <script>
+        // === НАСТРОЙКИ ЦЕН (Задай свои) ===
+        const PRICES = {
+            baseM2: 5500,    // Профиль+стеклопакет за м2
+            hardware: 3500,  // Фурнитура за створку
+            mosquito: 1200,  // Шт
+            sill: 800,       // Подоконник за п.м.
+            ebb: 400,        // Отлив за п.м.
+            install: 2500    // Монтаж за м2
+        };
+        let sashesTypes = ['fixed', 'tilt-turn']; // Начальное состояние: Глухое, П/О
+        const tg = window.Telegram?.WebApp;
+        const isTelegram = Boolean(tg);
+        const demoButton = document.getElementById('demo-button');
+
+        if (isTelegram) {
+            tg.expand();
+        } else {
+            demoButton.style.display = 'block';
+        }
+
+        // Элементы DOM
+        const frameEl = document.getElementById('window-frame');
+        const widthInput = document.getElementById('input-width');
+        const heightInput = document.getElementById('input-height');
+        const sashCountEl = document.getElementById('sash-count');
+
+        // --- Функции Визуализации ---
+        function renderWindow() {
+            const w = parseInt(widthInput.value) || 1000;
+            const h = parseInt(heightInput.value) || 1000;
+            
+            // Масштабирование рамы
+            frameEl.style.width = '100%';
+            frameEl.style.aspectRatio = `${w} / ${h}`;
+
+            // Отрисовка створок
+            frameEl.innerHTML = '';
+            sashesTypes.forEach((type, index) => {
+                const sash = document.createElement('div');
+                sash.className = `sash ${type}`;
+                sash.onclick = () => toggleSashType(index);
+                frameEl.appendChild(sash);
+            });
+            sashCountEl.innerText = sashesTypes.length;
+            calculatePrice();
+        }
+
+        function toggleSashType(index) {
+            const types = ['fixed', 'turn', 'tilt-turn'];
+            const current = sashesTypes[index];
+            sashesTypes[index] = types[(types.indexOf(current) + 1) % types.length];
+            renderWindow();
+        }
+
+        function updateSashes(change) {
+            if (change === 1 && sashesTypes.length < 4) sashesTypes.push('fixed');
+            if (change === -1 && sashesTypes.length > 1) sashesTypes.pop();
+            renderWindow();
+        }
+
+        // --- Расчет и Отправка ---
+        function calculatePrice() {
+            const w = parseInt(widthInput.value);
+            const h = parseInt(heightInput.value);
+            const area = (w * h) / 1000000;
+            
+            let total = area * PRICES.baseM2;
+
+            const activeSashes = sashesTypes.filter(t => t !== 'fixed').length;
+            total += activeSashes * PRICES.hardware;
+
+            if(document.getElementById('check-sill').checked) total += (w/1000) * PRICES.sill;
+            if(document.getElementById('check-ebb').checked) total += (w/1000) * PRICES.ebb;
+            if(document.getElementById('check-mosquito').checked) total += activeSashes * PRICES.mosquito;
+            if(document.getElementById('check-install').checked) total += area * PRICES.install;
+
+            total = Math.round(total);
+
+            // Обновляем кнопку Телеграм или демо
+            const label = `СФОРМИРОВАТЬ PDF: ${total.toLocaleString()} ₽`;
+            if (isTelegram) {
+                tg.MainButton.setText(label);
+                tg.MainButton.show();
+            } else {
+                demoButton.innerText = `${label} (демо)`;
+            }
+            return total;
+        }
+
+        // Обработчик главной кнопки
+        function handleSubmit() {
+            const data = {
+                width: widthInput.value,
+                height: heightInput.value,
+                sashes: sashesTypes,
+                extras: {
+                    sill: document.getElementById('check-sill').checked,
+                    ebb: document.getElementById('check-ebb').checked,
+                    mosquito: document.getElementById('check-mosquito').checked,
+                    install: document.getElementById('check-install').checked
+                },
+                totalPrice: calculatePrice()
+            };
+
+            if (isTelegram) {
+                tg.sendData(JSON.stringify(data));
+            } else {
+                console.log('Демо-данные для отправки боту:', data);
+                alert('Демо-режим: смотри данные в консоли. Для реальной отправки открой страницу в Telegram Web App.');
+            }
+        }
+
+        if (isTelegram) {
+            tg.onEvent('mainButtonClicked', handleSubmit);
+        } else {
+            demoButton.addEventListener('click', handleSubmit);
+        }
+
+        // Слушатели изменений
+        widthInput.addEventListener('input', renderWindow);
+        heightInput.addEventListener('input', renderWindow);
+        document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.addEventListener('change', calculatePrice));
+
+        // Первый запуск
+        renderWindow();
+    </script>
+</body>
+</html>
