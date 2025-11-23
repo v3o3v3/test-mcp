@@ -1,0 +1,19 @@
+{
+  "name": "test-mcp",
+  "version": "1.0.0",
+  "description": "Telegram web app калькулятор окон с генерацией PDF",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node bot.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "pdfmake": "^0.2.20",
+    "telegraf": "^4.16.3"
+  }
+}
